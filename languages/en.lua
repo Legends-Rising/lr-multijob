@@ -1,0 +1,31 @@
+Locales = {
+    ['en'] = {
+      ['cl_lang_1'] = 'On Duty',
+      ['cl_lang_2'] = 'Off Duty',
+      ['cl_lang_3'] = 'My Jobs',
+      ['cl_lang_4'] = 'Toggle Duty',
+      ['cl_lang_5'] = 'Duty Status',
+      ['cl_lang_grade'] = 'Grade',
+      ['cl_lang_salary'] = 'Salary',
+      ['cl_job_actions'] = 'Job Actions',
+      ['cl_switch_job'] = 'Switch Job',
+      ['cl_switch_your_job'] = 'Switch your job to',
+      ['cl_delete_job'] = 'Delete Job',
+      ['cl_delete_selected_job'] = 'Delete the selected job',
+      ['sv_command_desc'] = 'Open your job menu',
+      ['sv_current_job_error'] = 'You already have that job active!',
+      ['sv_invalid_job'] = 'Invalid job!',
+      ['sv_job'] = 'Job switched to',
+      ['sv_job_max'] = 'You have reached the max job limit!',
+      ['sv_job_deleted'] = 'You deleted the job',
+      ['sv_job_deleted_2'] = 'from your multiple job list',
+      ['sv_job_specified'] = 'No record of that job found',
+      ['sv_job_does'] = 'Job does not exist or cannot be removed',
+      ['sv_command_remove'] = 'Remove a job from a given player (by ID)',
+      ['sv_command_r_id'] = 'The player ID',
+      ['sv_command_r_name'] = 'The job name to remove',
+      ['sv_provide'] = 'Please provide a valid player ID',
+      ['sv_provide_name'] = 'Please provide a valid job name',
+      ['sv_not_online'] = 'That player is not online or invalid ID'
+    }
+}
