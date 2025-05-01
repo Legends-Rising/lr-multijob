@@ -152,6 +152,33 @@ RegisterNetEvent('lr-multijobs:server:newJob', function(source, jobTable)
         return
     end
 
+    -- Check job conflict if feature enabled
+    if Config.EnableJobConflicts and Config.JobConflicts then
+        -- Get current jobs of the player (including the active one)
+        local currentJobs = exports.oxmysql:executeSync('SELECT job FROM player_jobs WHERE citizenid = ?', { cid }) or {}
+        for _, row in ipairs(currentJobs) do
+            local existingJob = row.job
+            -- Direct list: does the new job forbid the existing one?
+            local directConflicts = Config.JobConflicts[jobTable.name] or {}
+            for _, forbidden in ipairs(directConflicts) do
+                if forbidden == existingJob then
+                    VORPcore.NotifyTip(src, ('You cannot take the %s job while you already have %s.'):format(jobTable.name, existingJob), 4000)
+                    debugPrint('Job conflict detected (direct):', jobTable.name, 'vs', existingJob)
+                    return
+                end
+            end
+            -- Reverse list: does the existing job forbid the new one?
+            local reverseConflicts = Config.JobConflicts[existingJob] or {}
+            for _, forbidden in ipairs(reverseConflicts) do
+                if forbidden == jobTable.name then
+                    VORPcore.NotifyTip(src, ('Your current job %s conflicts with %s.'):format(existingJob, jobTable.name), 4000)
+                    debugPrint('Job conflict detected (reverse):', existingJob, 'vs', jobTable.name)
+                    return
+                end
+            end
+        end
+    end
+
     local maxJobs = getPlayerMaxJobs(src)
     local countData = exports.oxmysql:executeSync('SELECT COUNT(*) as jobCount FROM player_jobs WHERE citizenid = ?', { cid })
     local jobCount = countData and countData[1] and countData[1].jobCount or 0

@@ -11,3 +11,14 @@ Config.GroupMaxJobs = {
 }
 
 Config.DefaultMaxJobs = 3  -- Default max jobs if group not found
+
+-- Toggle job-conflict system
+Config.EnableJobConflicts = false   -- Set to true to prevent players from holding clashing jobs
+
+-- Define clashing jobs. Use job names as they appear in the `society` table.
+-- Example below: a blacksmith cannot also be a miner or smelter, and vice-versa.
+-- Leave the table empty (or keep EnableJobConflicts = false) to disable this check.
+Config.JobConflicts = {
+    -- ['blacksmith'] = { 'miner', 'smelter' },
+    -- ['miner']      = { 'blacksmith' }        -- both directions not required but recommended
+}

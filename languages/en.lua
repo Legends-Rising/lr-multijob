@@ -26,6 +26,8 @@ Locales = {
       ['sv_command_r_name'] = 'The job name to remove',
       ['sv_provide'] = 'Please provide a valid player ID',
       ['sv_provide_name'] = 'Please provide a valid job name',
-      ['sv_not_online'] = 'That player is not online or invalid ID'
+      ['sv_not_online'] = 'That player is not online or invalid ID',
+      ['sv_job_conflict'] = 'You cannot take the %s job while you already have %s.',
+      ['sv_job_conflict_2'] = 'Your current job %s conflicts with %s.'
     }
 }
