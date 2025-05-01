@@ -132,7 +132,3 @@ Please follow the existing code-style and commit conventions.
 * The **VORP** & **Overextended** teams for their frameworks
 
 ---
-
-## License
-
-This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details. 
