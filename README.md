@@ -80,7 +80,7 @@ If you want to add a new job from another script simply trigger:
 
 ```lua
 -- server-side
-TriggerEvent('lr-multijobs:server:newJob', source, {
+TriggerServerEvent('lr-multijobs:server:newJob', source, {
     name  = 'police',   -- job name string
     grade = { level = 2 } -- integer grade level
 })
