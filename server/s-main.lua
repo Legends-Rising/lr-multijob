@@ -1,6 +1,57 @@
 local VORPcore = exports.vorp_core:GetCore()
 
 --------------------------------
+-- DL-Society Integration
+--------------------------------
+local function isDLSocietyAvailable()
+    return Config.UseDLSociety and GetResourceState('dl_society') == 'started'
+end
+
+local function getDLSocietyJobs()
+    if not isDLSocietyAvailable() then return {} end
+    
+    -- Query all jobs from dl_jobs table
+    local jobs = exports.oxmysql:executeSync([[
+        SELECT j.name, j.label, g.grade, g.grade_label, g.salary 
+        FROM dl_jobs j
+        JOIN dl_job_grades g ON j.name = g.job_name
+        ORDER BY j.name, g.grade
+    ]])
+    
+    return jobs or {}
+end
+
+local function getDLJobGrades(jobName)
+    if not isDLSocietyAvailable() then return {} end
+    
+    local grades = exports.oxmysql:executeSync([[
+        SELECT grade, grade_label, salary, isBoss, armoryAccess, withDrawBalance
+        FROM dl_job_grades
+        WHERE job_name = ?
+        ORDER BY grade
+    ]], { jobName })
+    
+    return grades or {}
+end
+
+local function validateDLJob(jobName, grade)
+    if not isDLSocietyAvailable() then return false, 0 end
+    
+    local jobGrade = exports.oxmysql:executeSync([[
+        SELECT j.name, g.grade, g.salary
+        FROM dl_jobs j
+        JOIN dl_job_grades g ON j.name = g.job_name
+        WHERE j.name = ? AND g.grade = ?
+    ]], { jobName, grade })
+    
+    if jobGrade and jobGrade[1] then
+        return true, tonumber(jobGrade[1].salary) or 0
+    end
+    
+    return false, 0
+end
+
+--------------------------------
 -- Functions
 --------------------------------
 local function getCharacter(source)
@@ -152,8 +203,25 @@ AddEventHandler('lr-multijobs:server:newJob', function(source, jobTable)
         return
     end
 
-    -- Check if job exists in society table (only if that feature is enabled)
-    if Config.UseSocietyTable then
+    -- Check job validity based on configured job system
+    local isJobValid = false
+    local jobSalary = 0
+    
+    -- If DL-Society is enabled and available, validate against it
+    if Config.UseDLSociety and isDLSocietyAvailable() then
+        isJobValid, jobSalary = validateDLJob(jobTable.name, jobTable.grade.level)
+        if not isJobValid then
+            debugPrint('Job or grade not found in dl_jobs/dl_job_grades tables:', jobTable.name, jobTable.grade.level)
+            return
+        end
+        
+        -- Use salary from DL-Society if none provided
+        if not jobTable.salary then
+            jobTable.salary = jobSalary
+            debugPrint('Using salary from dl-society:', jobTable.salary)
+        end
+    -- Otherwise, if standard society table is enabled, check there
+    elseif Config.UseSocietyTable then
         local jobExists = exports.oxmysql:executeSync('SELECT 1 FROM society WHERE job = ? AND jobgrade = ?', 
             { jobTable.name, jobTable.grade.level })
         if not jobExists or not jobExists[1] then
@@ -170,9 +238,12 @@ AddEventHandler('lr-multijobs:server:newJob', function(source, jobTable)
                 debugPrint('Using salary from society table:', jobTable.salary)
             end
         end
+    else
+        -- When neither job system is enabled, any job name is valid
+        isJobValid = true
     end
 
-    -- Use default salary if none provided or found in society
+    -- Use default salary if none provided or found
     if not jobTable.salary then
         jobTable.salary = Config.DefaultSalary
         debugPrint('Using default salary:', jobTable.salary)
@@ -276,8 +347,28 @@ VORPcore.Callback.Register('lr-multijobs:server:getMyJobs', function(source, cb)
     
     local result
 
-    if Config.UseSocietyTable then
-        -- Query with salary from society table, but only show jobs that exist in both player_jobs AND society
+    -- Priority: DL-Society > Standard Society > player_jobs only
+    if Config.UseDLSociety and isDLSocietyAvailable() then
+        -- Query with job details from dl_jobs and dl_job_grades
+        result = exports.oxmysql:executeSync([[
+            SELECT DISTINCT pj.job, pj.grade, pj.salary, j.label as jobLabel, g.grade_label as gradeLabel
+            FROM player_jobs pj
+            JOIN dl_jobs j ON pj.job = j.name
+            JOIN dl_job_grades g ON pj.job = g.job_name AND pj.grade = g.grade
+            WHERE pj.citizenid = ?
+        ]], { cid })
+        
+        -- If no results from join, try getting from player_jobs only
+        if not result or #result == 0 then
+            debugPrint('No matching jobs in dl-society tables, falling back to player_jobs')
+            result = exports.oxmysql:executeSync([[
+                SELECT DISTINCT job, grade, salary
+                FROM player_jobs
+                WHERE citizenid = ?
+            ]], { cid })
+        end
+    elseif Config.UseSocietyTable then
+        -- Query with salary from society table
         result = exports.oxmysql:executeSync([[
             SELECT DISTINCT pj.job, pj.grade, s.salary
             FROM player_jobs pj
@@ -285,7 +376,7 @@ VORPcore.Callback.Register('lr-multijobs:server:getMyJobs', function(source, cb)
             WHERE pj.citizenid = ?
         ]], { cid })
     else
-        -- When society table is disabled, ONLY pull jobs from player_jobs table
+        -- When no job system is enabled, only pull jobs from player_jobs table
         result = exports.oxmysql:executeSync([[
             SELECT DISTINCT job, grade, salary
             FROM player_jobs
@@ -306,16 +397,17 @@ VORPcore.Callback.Register('lr-multijobs:server:getMyJobs', function(source, cb)
         debugPrint('Processing job:', v.job, 'grade:', v.grade)
         
         -- Calculate salary based on configuration
-        local salary = Config.DefaultSalary
-        if v.salary then
-            salary = v.salary
-        end
+        local salary = v.salary or Config.DefaultSalary
+        
+        -- Create job label if not provided
+        local jobLabel = v.jobLabel or v.job
+        local gradeLabel = v.gradeLabel or ('Grade ' .. v.grade)
         
         table.insert(storeJobs, {
             job = v.job,
             salary = salary,
-            jobLabel = v.job,
-            gradeLabel = 'Grade ' .. v.grade,
+            jobLabel = jobLabel,
+            gradeLabel = gradeLabel,
             grade = v.grade,
             isCurrent = (character.job == v.job)
         })
@@ -449,15 +541,30 @@ RegisterCommand("listjobs", function(source, args, rawCommand)
         return
     end
     
-    if not Config.UseSocietyTable then
-        VORPcore.NotifyTip(src, "This command requires society table to be enabled", 4000)
+    local jobs
+    
+    -- Check which job system to use
+    if Config.UseDLSociety and isDLSocietyAvailable() then
+        -- Get jobs from dl-society
+        debugPrint('Getting jobs from dl-society')
+        jobs = getDLSocietyJobs()
+        
+        -- Format jobs to match expected structure
+        for i, job in ipairs(jobs) do
+            jobs[i].jobgrade = job.grade
+            jobs[i].job = job.name
+        end
+    elseif Config.UseSocietyTable then
+        -- Get jobs from standard society table
+        debugPrint('Getting jobs from society table')
+        jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
+    else
+        VORPcore.NotifyTip(src, "No job system is enabled in the configuration", 4000)
         return
     end
     
-    -- Get all jobs from society table
-    local jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
     if not jobs or #jobs == 0 then
-        VORPcore.NotifyTip(src, "No jobs found in society table", 4000)
+        VORPcore.NotifyTip(src, "No jobs found", 4000)
         return
     end
     
@@ -493,33 +600,43 @@ RegisterCommand("assignjob", function(source, args, rawCommand)
         return
     end
     
-    -- If society table is enabled, validate the job exists
-    if Config.UseSocietyTable then
+    local isJobValid = false
+    local salary = Config.DefaultSalary
+    
+    -- Check which job system to use for validation
+    if Config.UseDLSociety and isDLSocietyAvailable() then
+        -- Validate against dl-society
+        isJobValid, salary = validateDLJob(job, grade)
+        if not isJobValid then
+            VORPcore.NotifyTip(src, "Job or grade not found in dl-society", 4000)
+            return
+        end
+    elseif Config.UseSocietyTable then
+        -- Validate against standard society table
         local jobExists = exports.oxmysql:executeSync('SELECT salary FROM society WHERE job = ? AND jobgrade = ?', 
             { job, grade })
         if not jobExists or not jobExists[1] then
             VORPcore.NotifyTip(src, "Job or grade not found in society table", 4000)
             return
         end
-        
-        -- Use the salary from society table
-        local salary = jobExists[1].salary
-        
-        -- Create job table
-        local jobTable = {
-            name = job,
-            grade = {
-                level = grade
-            },
-            salary = salary
-        }
-        
-        -- Add job to player
-        TriggerEvent('lr-multijobs:server:newJob', target_id, jobTable)
-        VORPcore.NotifyTip(src, "Job assigned to player", 4000)
+        salary = jobExists[1].salary
     else
-        VORPcore.NotifyTip(src, "This command requires society table to be enabled", 4000)
+        -- No job validation when neither system is enabled
+        isJobValid = true
     end
+    
+    -- Create job table
+    local jobTable = {
+        name = job,
+        grade = {
+            level = grade
+        },
+        salary = salary
+    }
+    
+    -- Add job to player
+    TriggerEvent('lr-multijobs:server:newJob', target_id, jobTable)
+    VORPcore.NotifyTip(src, "Job assigned to player", 4000)
 end, false)
 
 -- Command to open admin job assignment menu (admin only)
@@ -534,8 +651,9 @@ RegisterCommand("jobsmenu", function(source, args, rawCommand)
         return
     end
     
-    if not Config.UseSocietyTable then
-        VORPcore.NotifyTip(src, "This command requires society table to be enabled", 4000)
+    -- Check which job system is enabled
+    if not (Config.UseDLSociety and isDLSocietyAvailable()) and not Config.UseSocietyTable then
+        VORPcore.NotifyTip(src, "No job system is enabled in the configuration", 4000)
         return
     end
     
@@ -556,10 +674,22 @@ RegisterCommand("jobsmenu", function(source, args, rawCommand)
             character = targetChar
         }
         
-        -- Get all jobs from society table
-        local jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
+        -- Get all available jobs based on the active job system
+        local jobs
+        if Config.UseDLSociety and isDLSocietyAvailable() then
+            jobs = getDLSocietyJobs()
+            
+            -- Format jobs to match expected structure
+            for i, job in ipairs(jobs) do
+                jobs[i].jobgrade = job.grade
+                jobs[i].job = job.name
+            end
+        else
+            jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
+        end
+        
         if not jobs or #jobs == 0 then
-            VORPcore.NotifyTip(src, "No jobs found in society table", 4000)
+            VORPcore.NotifyTip(src, "No jobs found", 4000)
             return
         end
         
@@ -580,10 +710,22 @@ RegisterCommand("jobsmenu", function(source, args, rawCommand)
             end
         end
         
-        -- Get all jobs from society table
-        local jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
+        -- Get all available jobs based on the active job system
+        local jobs
+        if Config.UseDLSociety and isDLSocietyAvailable() then
+            jobs = getDLSocietyJobs()
+            
+            -- Format jobs to match expected structure
+            for i, job in ipairs(jobs) do
+                jobs[i].jobgrade = job.grade
+                jobs[i].job = job.name
+            end
+        else
+            jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
+        end
+        
         if not jobs or #jobs == 0 then
-            VORPcore.NotifyTip(src, "No jobs found in society table", 4000)
+            VORPcore.NotifyTip(src, "No jobs found", 4000)
             return
         end
         
@@ -605,15 +747,28 @@ AddEventHandler('lr-multijobs:server:refreshJobsList', function()
         return
     end
     
-    if not Config.UseSocietyTable then
-        VORPcore.NotifyTip(src, "This feature requires society table to be enabled", 4000)
+    -- Check which job system is enabled
+    if not (Config.UseDLSociety and isDLSocietyAvailable()) and not Config.UseSocietyTable then
+        VORPcore.NotifyTip(src, "No job system is enabled in the configuration", 4000)
         return
     end
     
-    -- Get all jobs from society table
-    local jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
+    -- Get all available jobs based on the active job system
+    local jobs
+    if Config.UseDLSociety and isDLSocietyAvailable() then
+        jobs = getDLSocietyJobs()
+        
+        -- Format jobs to match expected structure
+        for i, job in ipairs(jobs) do
+            jobs[i].jobgrade = job.grade
+            jobs[i].job = job.name
+        end
+    else
+        jobs = exports.oxmysql:executeSync("SELECT DISTINCT job, jobgrade, salary FROM society ORDER BY job, jobgrade")
+    end
+    
     if not jobs or #jobs == 0 then
-        VORPcore.NotifyTip(src, "No jobs found in society table", 4000)
+        VORPcore.NotifyTip(src, "No jobs found", 4000)
         return
     end
     

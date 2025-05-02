@@ -29,5 +29,9 @@ Config.JobConflicts = {
 -- jobs in the menu instead.
 Config.UseSocietyTable = true   -- set to false if you don't have, or don't want to use, the society table
 
+-- Whether to use the `dl-society` script and its database tables (dl_jobs, dl_job_grades)
+-- When enabled, this will take precedence over the standard society table
+Config.UseDLSociety = false     -- set to true if you have dl-society installed and want to use it
+
 -- Default salary that will be shown in the menu when `UseSocietyTable` is false
 Config.DefaultSalary = 0
