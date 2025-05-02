@@ -22,3 +22,12 @@ Config.JobConflicts = {
     -- ['blacksmith'] = { 'miner', 'smelter' },
     -- ['miner']      = { 'blacksmith' }        -- both directions not required but recommended
 }
+
+-- Whether to use the `society` SQL table for job validation & salaries.
+-- If set to `false` the script will **not** look in the `society` table when
+-- adding / changing jobs and will use the `Config.DefaultSalary` value for all
+-- jobs in the menu instead.
+Config.UseSocietyTable = true   -- set to false if you don't have, or don't want to use, the society table
+
+-- Default salary that will be shown in the menu when `UseSocietyTable` is false
+Config.DefaultSalary = 0

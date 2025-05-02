@@ -5,7 +5,7 @@ lua54 "yes"
 
 author 'CODE101'
 description 'LR-MultiJobs'
-version '1.0.0'
+version '1.0.1'
 
 shared_scripts { 
     'shared/config.lua',
